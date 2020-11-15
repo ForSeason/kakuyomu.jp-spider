@@ -65,10 +65,16 @@ func getNovelContent(chapterList []([]string)) {
 			}
 			defer file.Close()
 			for _, v := range match {
-				io.WriteString(file, v[1]+"\r\n")
+				text := fuckRuby(v[1])
+				io.WriteString(file, text+"\r\n")
 			}
 			log.Printf("chapter %s download finished.", v[0])
 			<-ch
 		}(v, ch, r)
 	}
+}
+
+func fuckRuby(text string) string {
+	r, _ := regexp.Compile(`<ruby><rb>(.*?)</rb><rp>（</rp><rt>(.*?)</rt><rp>）</rp></ruby>`)
+	return r.ReplaceAllString(text, `$1($2)`)
 }
