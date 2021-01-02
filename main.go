@@ -9,6 +9,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -24,24 +25,47 @@ var (
 	novelName             string
 	channelNum            int
 	ifNumbersInsteadTitle bool
+	isInteractiveMode     bool
+	ioChannel             chan int
 )
 
 func main() {
 	parseParams()
+	if isInteractiveMode {
+		runInteractive()
+	} else {
+		runNormal()
+	}
+}
+
+func runNormal() {
 	novelName = getNovelTitle()
 	createNovelDirectory()
 	chapterList := getChapterList()
 	getNovelContent(chapterList)
 }
 
+func runInteractive() {
+	for {
+		fmt.Print("Input novel url(Press Ctrl+C to exit):")
+		fmt.Scanf("%s", &novelUrl)
+		novelName = getNovelTitle()
+		createNovelDirectory()
+		chapterList := getChapterList()
+		getNovelContent(chapterList)
+	}
+}
+
 func parseParams() {
+	baseUrl = "https://kakuyomu.jp"
 	flag.IntVar(&channelNum, "j", 5, "numbers of goroutines used to download")
 	flag.BoolVar(&ifNumbersInsteadTitle, "n", false, "use number instead of title as filename")
 	flag.Parse()
 	if flag.NArg() != 2 {
-		log.Fatalf("wrong argument")
+		log.Print("entering interactive mode")
+		isInteractiveMode = true
+		return
 	}
-	baseUrl = "https://kakuyomu.jp"
 	novelUrl = flag.Arg(1)
 }
 
@@ -86,11 +110,13 @@ func getChapterList() []([]string) {
 }
 
 func getNovelContent(chapterList []([]string)) {
-	ch := make(chan int, 5)
+	ch := make(chan int, channelNum)
+	ioChannel = make(chan int, channelNum*5)
 	count := 0
 	r, _ := regexp.Compile(`<p id="p\d+">(.*?)</p>`)
 	for _, v := range chapterList {
 		ch <- count
+		ioChannel <- 0
 		go func(v []string, ch chan int, r *regexp.Regexp) {
 			client := &http.Client{}
 			resp, err := client.Get(v[1])
@@ -117,8 +143,12 @@ func getNovelContent(chapterList []([]string)) {
 				io.WriteString(file, text+"\r\n")
 			}
 			log.Printf("chapter %s download finished.", v[0])
+			<-ioChannel
 		}(v, ch, r)
 		count++
+	}
+	for len(ioChannel) > 0 {
+
 	}
 }
 
