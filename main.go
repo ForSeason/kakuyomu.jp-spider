@@ -48,7 +48,7 @@ func runNormal() {
 func runInteractive() {
 	for {
 		fmt.Print("Input novel url(Press Ctrl+C to exit):")
-		fmt.Scanf("%s", &novelUrl)
+		fmt.Scanln(&novelUrl)
 		novelName = getNovelTitle()
 		createNovelDirectory()
 		chapterList := getChapterList()
