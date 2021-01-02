@@ -8,27 +8,67 @@
 package main
 
 import (
+	"flag"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"regexp"
+	"strconv"
 )
 
-var baseUrl string
+var (
+	baseUrl               string
+	novelUrl              string
+	novelName             string
+	channelNum            int
+	ifNumbersInsteadTitle bool
+)
 
 func main() {
-	if len(os.Args) != 2 {
-		log.Fatalf("wrong argument")
-	}
-	baseUrl = "https://kakuyomu.jp"
-	novelUrl := os.Args[1]
-	chapterList := getChapterList(novelUrl)
+	parseParams()
+	novelName = getNovelTitle()
+	createNovelDirectory()
+	chapterList := getChapterList()
 	getNovelContent(chapterList)
 }
 
-func getChapterList(novelUrl string) []([]string) {
+func parseParams() {
+	flag.IntVar(&channelNum, "j", 5, "numbers of goroutines used to download")
+	flag.BoolVar(&ifNumbersInsteadTitle, "n", false, "use number instead of title as filename")
+	flag.Parse()
+	if flag.NArg() != 2 {
+		log.Fatalf("wrong argument")
+	}
+	baseUrl = "https://kakuyomu.jp"
+	novelUrl = flag.Arg(1)
+}
+
+func getNovelTitle() string {
+	client := &http.Client{}
+	resp, err := client.Get(novelUrl)
+	if err != nil {
+		log.Fatalf("failed to reach: %s", novelUrl)
+	}
+	html, _ := ioutil.ReadAll(resp.Body)
+	defer resp.Body.Close()
+	r, _ := regexp.Compile(`<h1 id="workTitle"><a href=".*?">(.*?)</a></h1>`)
+	match := r.FindAllStringSubmatch(string(html), -1)
+	for _, v := range match {
+		return v[1]
+	}
+	return "null"
+}
+
+func createNovelDirectory() {
+	err := os.Mkdir(novelName, 0777)
+	if err != nil {
+		log.Fatalf("failed to create directory:%s", err.Error())
+	}
+}
+
+func getChapterList() []([]string) {
 	client := &http.Client{}
 	resp, err := client.Get(novelUrl)
 	if err != nil {
@@ -47,9 +87,10 @@ func getChapterList(novelUrl string) []([]string) {
 
 func getNovelContent(chapterList []([]string)) {
 	ch := make(chan int, 5)
+	count := 0
 	r, _ := regexp.Compile(`<p id="p\d+">(.*?)</p>`)
 	for _, v := range chapterList {
-		ch <- 1
+		ch <- count
 		go func(v []string, ch chan int, r *regexp.Regexp) {
 			client := &http.Client{}
 			resp, err := client.Get(v[1])
@@ -58,8 +99,15 @@ func getNovelContent(chapterList []([]string)) {
 			}
 			html, _ := ioutil.ReadAll(resp.Body)
 			defer resp.Body.Close()
+			chapterNum := <-ch
 			match := r.FindAllStringSubmatch(string(html), -1)
-			file, err := os.OpenFile(v[0]+".txt", os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0666)
+			var fileName string
+			if ifNumbersInsteadTitle {
+				fileName = strconv.Itoa(chapterNum)
+			} else {
+				fileName = v[0]
+			}
+			file, err := os.OpenFile(novelName+"/"+fileName+".txt", os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0666)
 			if err != nil {
 				log.Fatalf("error: %v", err)
 			}
@@ -69,8 +117,8 @@ func getNovelContent(chapterList []([]string)) {
 				io.WriteString(file, text+"\r\n")
 			}
 			log.Printf("chapter %s download finished.", v[0])
-			<-ch
 		}(v, ch, r)
+		count++
 	}
 }
 
